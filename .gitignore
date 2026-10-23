@@ -4,3 +4,19 @@ __pycache__/
 *.log
 *.bin
 uv.lock
+
+# Local printer data and credentials do not belong in this public repository.
+printer_data/
+backups/
+printer.cfg
+printer-*.cfg
+moonraker.conf
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519

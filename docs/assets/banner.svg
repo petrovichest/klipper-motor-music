@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="190" viewBox="0 0 1000 190" role="img" aria-label="M1006 commands become selectable X, Y, and Z stepper voices">
+  <rect width="1000" height="190" rx="14" fill="#101923"/>
+  <g font-family="Arial, sans-serif">
+    <text x="32" y="40" fill="#eef4fa" font-size="22" font-weight="700">M1006 → STEP / DIR</text>
+    <text x="32" y="65" fill="#a9b8c8" font-size="14">Bambu melodies · Klipper motors</text>
+    <rect x="32" y="87" width="255" height="70" rx="8" fill="#182735" stroke="#334b60"/>
+    <g font-family="monospace" font-size="13" fill="#c7d5e2">
+      <text x="48" y="112">VOICES=XYZ</text>
+      <text x="48" y="136">PRE_HOME=1</text>
+    </g>
+    <path d="M314 121H365m-9-7 9 7-9 7" fill="none" stroke="#7b91a5" stroke-width="2"/>
+    <g font-family="monospace" font-size="15" font-weight="700">
+      <text x="396" y="55" fill="#6ed7dc">X</text>
+      <text x="396" y="104" fill="#f4c777">Y</text>
+      <text x="396" y="153" fill="#c7aff5">Z</text>
+    </g>
+    <g fill="none" stroke-width="2.5" stroke-linejoin="round">
+      <path d="M430 58H570l12-23 12 23 12-23 12 23H770l12-23 12 23 12-23 12 23H960" stroke="#6ed7dc"/>
+      <path d="M430 107l12-23 12 23 12-23 12 23H526l10-23 10 23 10-23 10 23 10-23 10 23H634l14-23 14 23 14-23 14 23H738l10-23 10 23 10-23 10 23 10-23 10 23H846l14-23 14 23 14-23 14 23H960" stroke="#f4c777"/>
+      <path d="M430 156l17-23 17 23 17-23 17 23H542l17-23 17 23 17-23 17 23H654l14-23 14 23 14-23 14 23H754l14-23 14 23 14-23 14 23H854l17-23 17 23 17-23 17 23H960" stroke="#c7aff5"/>
+    </g>
+  </g>
+</svg>

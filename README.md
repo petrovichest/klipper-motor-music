@@ -1,95 +1,105 @@
 # Klipper Motor Music
 
-Experimental Bambu `M1006` music playback through Klipper STEP/DIR motors.
+[![English](docs/assets/english.svg)](README.md) [![Русский](docs/assets/russian.svg)](README.ru.md)
 
-Расширение Klipper, которое читает музыкальный G-code Bambu и генерирует
-короткие колебания шаговых моторов. Динамик, дополнительные зависимости,
-изменение микрошагов, тока драйверов и перепрошивка MCU не требуются.
+![M1006 music commands become three selectable stepper voices](docs/assets/banner.svg)
 
-**Статус: экспериментальная реализация.** Пользователь подтвердил слышимость
-и узнаваемость стартовой мелодии A1 на Ender-3 Pro в режиме одного мотора.
-Также проверены разбор мелодий и фактически сформированные команды MCU в файловом
-режиме настоящего Klipper v0.13.0 и `master`. Это подтверждает расписание
-шагов и возврат счётчиков, но не слышимость, тембр, отсутствие физических
-пропусков шагов или достаточную пропускную способность конкретного соединения.
+**Play Bambu Lab melodies through your Klipper stepper motors.**
+Use original `M1006` sound blocks, choose any combination of three voices,
+and play a startup melody before homing with `PRE_HOME=1`.
 
-## Что реализовано
+[![Tests](https://github.com/petrovichest/klipper-motor-music/actions/workflows/tests.yml/badge.svg)](https://github.com/petrovichest/klipper-motor-music/actions/workflows/tests.yml)
+[GPL-3.0-or-later](LICENSE) · [Reference](docs/reference.md) · [Development](docs/development.md) · [Privacy audit](docs/privacy.md)
 
-- `M1006 S1`, ноты трёх голосов, паузы, громкость и `M1006 W`.
-- Одновременное воспроизведение голосов с общим временем начала.
-- Загрузка исходных музыкальных блоков Bambu через `MOTOR_MUSIC_PLAY`.
-- Оригинальные стартовая и финальная мелодии A1 в `examples/tunes/`.
-- Предпросмотр без движения и короткая пробная нота.
-- Восстановление штатной кинематики после мелодии, включая input shaper.
+## What you get
 
-Первый целевой принтер — Cartesian Ender с обычными STEP/DIR-драйверами.
-CoreXY, Delta, экструдер и оси с несколькими независимыми драйверами пока
-не поддерживаются. Два мотора, подключённые к одному драйверу, для Klipper
-остаются одним мотором, однако их звук и механику всё равно надо проверить.
+- **Bambu sound files:** stock A1 start and finish tunes are included.
+- **Selectable voices:** `X`, `Y`, `Z`, `XY`, `XZ`, `YZ`, or `XYZ` per playback.
+- **Before-homing playback:** enable selected motors, play, then run `G28`.
+- **No extra speaker or firmware patch:** one Python extension uses Klipper's existing dependencies.
+- **Offline checks:** preview a tune without enabling motors or moving the printer.
 
-## Установка
+**Experimental hardware feature.** One- and three-motor playback, including
+the before-homing mode, has been reported working on an Ender-3 Pro. Automated
+tests exercise real Klipper v0.13.0 and `master` step generation. Sound quality,
+physical position retention, and transport capacity still depend on the printer.
+This reproduces notes and rhythm through STEP/DIR micro-oscillations; it does
+not reproduce Bambu's proprietary motor-control algorithm or identical timbre.
 
-На компьютере, где работает Klipper, когда принтер свободен:
+**Supported:** Cartesian XYZ motors. CoreXY, Delta, extruders, and axes with
+multiple independent drivers are not supported. See the [limits](docs/reference.md#operating-limits).
+
+## Install
+
+Run on the Klipper host while the printer is idle. Adjust paths if Klipper
+or your configuration directory is elsewhere.
+Already installed? Use [Update or uninstall](#update-or-uninstall) instead of
+copying a profile over your current settings.
 
 ```bash
 git clone https://github.com/petrovichest/klipper-motor-music.git ~/klipper-motor-music
 ln -s ~/klipper-motor-music/motor_music.py ~/klipper/klippy/extras/motor_music.py
 mkdir -p ~/printer_data/config/tunes
 cp ~/klipper-motor-music/examples/tunes/*.gcode ~/printer_data/config/tunes/
-cp ~/klipper-motor-music/examples/motor_music.cfg ~/printer_data/config/
+cp ~/klipper-motor-music/examples/motor_music_3voice.cfg ~/printer_data/config/motor_music.cfg
 ```
 
-Если Klipper или каталог конфигурации находятся в другом месте, поправь пути.
-Ссылка `ln -s` намеренно не перезаписывает уже существующее расширение.
-Добавь в `printer.cfg`:
+Add to `printer.cfg`:
 
 ```ini
 [include motor_music.cfg]
 ```
 
-Затем выполни `RESTART`. Установочный пример использует **ведущий голос Y
-мелодии Bambu на физическом моторе X**. Остальные голоса пока молчат.
-Для обычного Ender XY это колебание на один настроенный микрошаг:
-`40 / (200 × 16) = 0.0125 мм` вперёд и обратно.
+Restart the **Klipper service** from your printer interface or with:
 
-### Обновление расширения
-
-Когда принтер свободен, выполни `git -C ~/klipper-motor-music pull --ff-only`
-и перезапусти службу Klipper через интерфейс принтера или
-`sudo systemctl restart klipper`. Обычный G-code `RESTART` перечитывает конфиг,
-но уже импортированный Python-код остаётся в памяти; после обновления самого
-`motor_music.py` нужен именно перезапуск службы. После него сделай обычный
-homing и безопасную парковку перед воспроизведением.
-
-### Первая проверка
-
-Сначала можно выполнить предпросмотр — он не требует homing и не двигает моторы:
-
-```gcode
-MOTOR_MUSIC_TEST VOICE=Y NOTE=46 DURATION=200 DRY_RUN=1
-MOTOR_MUSIC_PLAY FILENAME=a1-start.gcode DRY_RUN=1
+```bash
+sudo systemctl restart klipper
 ```
 
-Для воспроизведения нужен свободный стол, обычный homing XYZ и парковка
-вдали от концевиков. На Ender с достаточной рабочей областью, например:
+The full profile maps voice X → motor X, Y → Y, Z → Z. All seven combinations
+are available; choosing `VOICES` never permanently mutes anything.
+The symlink command deliberately fails if an extension already exists.
+
+For an initial one-motor setup, use [motor_music.cfg](examples/motor_music.cfg)
+instead. It maps **only Bambu's Y voice to motor X**; other voices are not
+configured. Install one profile, not both.
+
+## First playback
+
+Preview first. This requires no homing and does not enable motors or move:
 
 ```gcode
+MOTOR_MUSIC_PLAY FILENAME=a1-start.gcode VOICES=XYZ DRY_RUN=1
+```
+
+To play **before homing**:
+
+```gcode
+MOTOR_MUSIC_PLAY FILENAME=a1-start.gcode VOICES=XYZ PRE_HOME=1
 G28
-G90
-G1 X100 Y100 Z10 F3000
-MOTOR_MUSIC_TEST VOICE=Y NOTE=46 DURATION=200
 ```
 
-Это нота ля 440 Гц на 200 мс. Начни с неё. После проверки движения,
-звука и положения можно вызвать мелодии:
+`PRE_HOME=1` enables selected motors and leaves them on for `G28`. It never marks
+axes as homed. Limits: **3 seconds and one configured microstep of at most
+0.025 mm**. Unknown positions cannot be checked against physical stops; the
+mechanism must be free to make these small oscillations. Known axes still obey
+position checks.
+
+For normal playback, home XYZ and use your printer's usual safe interior park
+first. Then run:
 
 ```gcode
-MOTOR_MUSIC_PLAY FILENAME=a1-start.gcode
-MOTOR_MUSIC_PLAY FILENAME=a1-finish.gcode
+MOTOR_MUSIC_PLAY FILENAME=a1-start.gcode VOICES=XYZ
+MOTOR_MUSIC_PLAY FILENAME=a1-finish.gcode VOICES=XYZ
 ```
 
-Для сравнения партий одной мелодии добавь `VOICES`. Параметр действует только
-на текущий запуск и не требует смены конфига или перезапуска между пробами:
+These are sound files, **not print jobs**. Load them with `MOTOR_MUSIC_PLAY`.
+The importer ignores known Bambu enable/release wrappers, rejects motion and
+heater commands, and validates the whole file before playback.
+
+## Choose the voices
+
+Run one command at a time to compare the same tune:
 
 ```gcode
 MOTOR_MUSIC_PLAY FILENAME=a1-start.gcode VOICES=X
@@ -101,199 +111,65 @@ MOTOR_MUSIC_PLAY FILENAME=a1-start.gcode VOICES=YZ
 MOTOR_MUSIC_PLAY FILENAME=a1-start.gcode VOICES=XYZ
 ```
 
-Каждый голос играет свою исходную партию, включая её паузы; длительность
-мелодии сохраняется. В стартовой мелодии партия X короткая и содержит много
-тишины. Пропущенные голоса не получают шагов. Без `VOICES` играют все
-настроенные голоса. Для финальной мелодии замени имя на `a1-finish.gcode`.
-Параметр совместим с `DRY_RUN=1`.
+`VOICES` selects **original musical parts**, not copies of the lead melody.
+The stock A1 start tune has just **three notes in X**; Y carries the lead.
+Pauses and the full timeline are preserved. With the full profile, part names
+match physical motor names. Custom mappings can change that.
 
-Файлы из `examples/tunes/` загружай через `MOTOR_MUSIC_PLAY`, **не как задание
-печати**. Импортёр принимает только музыкальную последовательность и известную
-обвязку Bambu. Он пропускает `M17`, `M18`, `M400 S1` и `M73`, сохраняя состояние
-моторов Klipper; команды перемещения, нагрева и прочие команды отклоняются
-до первого шага. Неподдерживаемая или незаконченная мелодия не воспроизводится.
+The choice applies to one invocation. Omit `VOICES` to play all configured parts.
+It also works with `PRE_HOME=1` and `DRY_RUN=1`.
 
-### Вставка M1006 напрямую
+## Add it to your slicer
 
-Музыкальные строки можно вставить в макрос Klipper без преобразования:
+In `motor_music.cfg`, allow playback during a print and run `RESTART` while idle:
 
-```gcode
-M1006 S1
-M1006 C46 D20 M100
-M1006 C0 D10
-M1006 C49 D20 M100
-M1006 W
+```ini
+allow_during_print: True
 ```
 
-В этом режиме вставляй только строки `M1006`. Глобальные `M17`, `M18` и `M400`
-расширение не переопределяет. Команды до `W` лишь накапливают мелодию;
-`W` проверяет её и запускает воспроизведение. `MOTOR_MUSIC_CLEAR` сбрасывает
-накопленный блок.
-
-## Настройки и ограничения
-
-Все параметры показаны в [примере конфигурации](examples/motor_music.cfg).
-
-| Параметр | По умолчанию | Значение |
-|---|---:|---|
-| `voice_x`, `voice_y`, `voice_z` | задаются явно | Голос Bambu → `stepper_x`, `stepper_y` или `stepper_z` |
-| `amplitude_steps` | 1 | Максимальная амплитуда в настроенных микрошагах, 1–32 |
-| `max_frequency` | 1000 | Максимальная частота выбранного голоса, Гц |
-| `max_excursion` | 0.1 | Допустимое перемещение от исходной позиции, мм |
-| `max_step_rate` | 2000 | Верхняя суммарная частота шагов всех голосов, шаг/с |
-| `max_duration` | 15 | Максимальная длительность мелодии, с; жёсткий предел 30 |
-| `position_margin` | 1 | Минимальный отступ от пределов оси, мм |
-| `allow_during_print` | False | Разрешить музыку во время задания печати |
-| `tune_directory` | каталог config + `/tunes` | Откуда читать музыкальные файлы |
-
-Каждый мотор можно назначить только одному голосу. После первой проверки
-для полного трёхголосного варианта замени содержимое установленного
-`motor_music.cfg` на [профиль трёх голосов](examples/motor_music_3voice.cfg)
-и выполни `RESTART` на свободном принтере. Два профиля одновременно подключать
-не нужно. Профиль назначает `X → stepper_x`, `Y → stepper_y`, `Z → stepper_z`
-и задаёт `max_step_rate: 3000`: исходные мелодии A1 требуют пиков примерно
-2359 и 2490 шагов/с, поэтому начального лимита 2000 для них недостаточно.
-Амплитуда остаётся один микрошаг. Сначала проверь каждый мотор отдельно:
-
-```gcode
-MOTOR_MUSIC_TEST VOICE=X NOTE=46 DURATION=100
-MOTOR_MUSIC_TEST VOICE=Y NOTE=46 DURATION=100
-MOTOR_MUSIC_TEST VOICE=Z NOTE=46 DURATION=100
-```
-
-После `RESTART` нужны обычный homing и безопасная парковка, как при первой
-установке. Команды `MOTOR_MUSIC_PLAY` для мелодий остаются прежними.
-
-Реверс на каждом полупериоде плохо сжимается в протоколе Klipper.
-Поэтому многоголосие и увеличение амплитуды увеличивают поток команд MCU.
-Лимит шагов — ограничитель нагрузки, а не гарантия, что UART/USB/CAN её выдержит.
-Начальный лимит выбран для короткой одноголосной мелодии; три голоса
-могут превысить его. Не повышай лимиты до проверки транспорта.
-
-Пока не включено `allow_during_print`, активное или приостановленное задание
-блокирует воспроизведение. После проверки на оборудовании эту настройку
-можно включить для вызовов из `START_PRINT`/`END_PRINT`, в момент безопасной
-парковки. Оси должны быть homed, а назначенные моторы — уже включены.
-Расширение не включает и не отключает их самостоятельно.
-
-### Мелодии в начале и конце печати
-
-Чтобы сыграть стартовую мелодию **перед homing**, используй явный режим:
+In OrcaSlicer, open **Printer settings → Machine G-code**. For a melody before
+homing, put the sound call before your existing `G28`:
 
 ```gcode
 MOTOR_MUSIC_PLAY FILENAME=a1-start.gcode VOICES=XYZ PRE_HOME=1
 G28
 ```
 
-`PRE_HOME=1` сам включает выбранные моторы и оставляет их включёнными для
-следующего `G28`. Координаты и признаки homing не подменяются. Режим ограничен
-3 секундами и одним настроенным микрошагом не более 0.025 мм. До homing
-проверить расстояние до физических упоров невозможно: не используй этот
-режим с заклинившей механикой или соплом, упирающимся в деталь. Если координата
-оси уже известна, обычная проверка отступа от её границ сохраняется.
-`DRY_RUN=1` проверяет мелодию и эти ограничения без включения моторов.
+Keep the rest of your startup sequence. Alternatively, use the normal call
+without `PRE_HOME` after homing and an interior park.
 
-В установленном `motor_music.cfg` задай `allow_during_print: True` и выполни
-`RESTART` на свободном принтере. В OrcaSlicer открой настройки принтера →
-«Машинный G-code». В начальный G-code добавь вызов после homing и парковки
-внутри пределов осей, до очистки/продувки и первой экструзии:
-
-```gcode
-MOTOR_MUSIC_PLAY FILENAME=a1-start.gcode VOICES=XYZ
-```
-
-В конечном G-code или существующем макросе окончания добавь:
+In the end G-code or existing end macro, insert:
 
 ```gcode
 MOTOR_MUSIC_PLAY FILENAME=a1-finish.gcode VOICES=XYZ
 ```
 
-Конечная мелодия должна идти после подъёма сопла и выключения нагревателей,
-но **перед `M84`/`M18`**. Парковка должна иметь отступ `position_margin` от
-границ осей: непосредственно на `X=position_min` или `Y=position_max` команда
-будет отклонена. При необходимости поставь мелодию перед окончательной
-парковкой на границе. Настройки подготовки печати и температур оставь прежними.
+Place it **after the existing retract/lift and heater shutdown, before the final
+park at axis limits and before `M84`/`M18`**. Normal position checks apply.
+If your end macro already plays the tune, do not add a second call in the slicer.
+Choose start and finish voices independently. Save the preset and **slice again**.
 
-Голоса выбираются отдельно в каждой строке. После изменения начального
-G-code переслайсь модель: уже загруженные задания сохраняют старый код.
-
-При ошибке после начала низкоуровневой генерации Klipper переводится в shutdown:
-продолжать печать с возможным недоигранным полупериодом нельзя.
-Обычная отмена задания не прерывает уже поставленные в очередь шаги; для
-немедленной остановки служит штатный emergency stop `M112`.
-
-## Как получается звук
-
-Для ноты с частотой `f` генерируются одинаковые пары линейных перемещений:
-`0 → amplitude → 0`, каждое по `1 / (2f)` секунды. Они поступают в отдельные
-очереди `trapq` и штатный C-генератор шагов Klipper, обходя сглаживание обычных
-`G1`. На каждый шаг нет отдельного G-code, RPC или сетевого запроса.
-
-Нота заканчивается целым числом циклов. Остаток меньше одного периода
-остаётся тишиной; длительность строки и высота ноты сохраняются. Конец каждой
-ноты имеет нулевое суммарное перемещение. Затем возвращаются исходные
-кинематика и очередь каждого мотора, а счётчики проверяются на совпадение.
-
-Это воспроизведение той же нотной последовательности через микроколебания
-STEP/DIR. Оно не копирует закрытый алгоритм управления обмотками Bambu.
-Громкость приблизительно переводится в целое число микрошагов; при амплитуде
-один микрошаг все ненулевые уровни одинаковы. Акустические таблицы A1 к Ender
-не применяются. Равный тембр и достаточная слышимость пока не подтверждены.
-
-### Формат Bambu
-
-| Голос | Нота | Длительность | Громкость |
-|---|---|---|---|
-| X | `A` | `B` | `L` |
-| Y | `C` | `D` | `M` |
-| Z | `E` | `F` | `N` |
-
-Нота `n` соответствует MIDI `n + 23`; `37` — C4, `46` — A4. Ноль означает
-паузу. Длительность измеряется десятками миллисекунд, например `D20` = 200 мс.
-Три голоса одной строки начинаются одновременно; следующая строка начинается
-после самого длинного голоса. Поддерживаются ноты 1–72 и длительности до 2 с
-на строку. При отсутствии ноты голос в этой строке молчит. Заданный уровень
-громкости сохраняется до следующего значения.
-
-## Проверки без оборудования
-
-Парсер и планировщик используют только стандартную библиотеку Python:
+## Update or uninstall
 
 ```bash
-python3 -m unittest discover -s tests -v
-python3 tools/inspect_tune.py examples/tunes/a1-start.gcode
+git -C ~/klipper-motor-music pull --ff-only
+sudo systemctl restart klipper
 ```
 
-Интеграционная проверка использует настоящий Klippy и его C-код, формирует
-бинарный поток MCU и проверяет направление и количество реально закодированных
-шагов, одновременность голосов, повторные мелодии, счётчики позиции и обычное
-движение после воспроизведения. Serial-порт не открывается.
+Update only while idle. G-code `RESTART` reloads configuration; it does **not**
+reload an already imported Python extension. Code updates need a service restart.
+Your copied printer configuration is not overwritten by `git pull`.
 
-```bash
-python3 -m venv .venv
-. .venv/bin/activate
-pip install -r requirements.txt
-git clone --depth 1 --branch v0.13.0 https://github.com/Klipper3d/klipper.git /tmp/klipper-music-check
-cd /tmp/klipper-music-check
-cp test/configs/hostsimulator.config .config
-make olddefconfig
-make -j2
-cd -
-python3 tests/run_klipper.py /tmp/klipper-music-check
-```
+To uninstall, remove the include line, extension symlink, and sound calls from
+your slicer/macros, then restart the Klipper service. Keep your usual homing,
+parking, heater shutdown, and motor-off commands.
 
-Используй отдельный checkout для тестов: скрипт временно устанавливает туда
-расширение и удаляет его после проверки. GitHub Actions повторяет проверки
-для v0.13.0 и актуальной ветки `master`.
+## More information
 
-## Источники и лицензии
+- [Commands, configuration, limits, and troubleshooting](docs/reference.md)
+- [How it works, tests, and contributing](docs/development.md)
+- [Public-history privacy audit](docs/privacy.md)
 
-- [Bambu: MIDI to A1 mini](https://wiki.bambulab.com/en/A1-mini/Midi).
-- [Официальный MIDI → G-code конвертер](https://midi-to-gcode.bambulab.com/edit).
-- [Профили Bambu Studio](https://github.com/bambulab/BambuStudio/tree/79df7ae309be398ed30c9f397c13c9911c2edc57/resources/profiles/BBL/machine).
-- [Klipper force_move.py](https://github.com/Klipper3d/klipper/blob/v0.13.0/klippy/extras/force_move.py): образец временной замены кинематики.
-
-Код проекта — GPL-3.0-or-later, см. [LICENSE](LICENSE). Музыкальные блоки A1
-взяты из Bambu Studio с указанием исходного commit; для них действует AGPL-3.0,
-см. [LICENSES/AGPL-3.0.txt](LICENSES/AGPL-3.0.txt). Проект не связан с Bambu Lab
-или разработчиками Klipper.
+Project code is [GPL-3.0-or-later](LICENSE). Bundled Bambu Studio sound blocks
+retain their [AGPL-3.0 license](LICENSES/AGPL-3.0.txt) and source attribution.
+This project is not affiliated with Bambu Lab or the Klipper project.
