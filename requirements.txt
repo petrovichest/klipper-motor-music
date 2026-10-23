@@ -1,0 +1,6 @@
+# Development/integration tests only. The installed extension uses Klipper's
+# existing dependencies; no additional runtime package is required.
+cffi>=1.16
+greenlet>=3.0
+pyserial>=3.5
+Jinja2>=3.1

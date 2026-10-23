@@ -1,0 +1,42 @@
+name: Tests
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m unittest discover -s tests -v
+      - run: python tools/inspect_tune.py examples/tunes/a1-start.gcode
+  klipper:
+    name: Klipper ${{ matrix.ref }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ref: [v0.13.0, master]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r requirements.txt
+      - name: Build disposable Klipper simulator dictionary
+        env:
+          KLIPPER_REF: ${{ matrix.ref }}
+        run: |
+          git clone --depth 1 --branch "$KLIPPER_REF" https://github.com/Klipper3d/klipper.git "$RUNNER_TEMP/klipper"
+          cd "$RUNNER_TEMP/klipper"
+          cp test/configs/hostsimulator.config .config
+          make olddefconfig
+          make -j2
+      - name: Verify emitted MCU commands without hardware
+        run: python tests/run_klipper.py "$RUNNER_TEMP/klipper"
