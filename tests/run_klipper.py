@@ -58,11 +58,8 @@ shaper_type_x: ei
 shaper_freq_x: 30
 shaper_type_y: ei
 shaper_freq_y: 26.75
+[include {full_config}]
 [motor_music]
-voice_x: stepper_x
-voice_y: stepper_y
-voice_z: stepper_z
-max_step_rate: 8000
 tune_directory: {tunes}
 """
 
@@ -127,7 +124,8 @@ def main():
         with tempfile.TemporaryDirectory(prefix="motor-music-integration-") as tmp:
             work = pathlib.Path(tmp)
             config, gcode = work / "printer.cfg", work / "input.gcode"
-            config.write_text(CONFIG.format(tunes=ROOT / "examples/tunes"))
+            config.write_text(CONFIG.format(tunes=ROOT / "examples/tunes",
+                                            full_config=ROOT / "examples/motor_music_3voice.cfg"))
             gcode.write_text(GCODE)
             log, output = work / "klippy.log", work / "commands.bin"
             result = subprocess.run([sys.executable, str(klipper / "klippy/klippy.py"),

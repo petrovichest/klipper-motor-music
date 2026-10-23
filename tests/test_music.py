@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import math
+import configparser
 import pathlib
 import unittest
 
@@ -122,6 +123,23 @@ class OscillatorTests(unittest.TestCase):
                 tune = parse_gcode((root / "examples" / "tunes" / name).read_text())
                 plan, duration = build_plan(tune, {1: .0125})
                 self.assertGreater(len(plan[1]), 0)
+                self.assertLess(duration, 3)
+
+    def test_stock_a1_melodies_fit_full_three_voice_profile(self):
+        root = pathlib.Path(__file__).resolve().parents[1]
+        config = configparser.ConfigParser()
+        config.read(str(root / "examples/motor_music_3voice.cfg"))
+        settings = config["motor_music"]
+        self.assertEqual([settings["voice_" + v] for v in "xyz"],
+                         ["stepper_" + v for v in "xyz"])
+        for name in ["a1-start.gcode", "a1-finish.gcode"]:
+            with self.subTest(name=name):
+                tune = parse_gcode((root / "examples/tunes" / name).read_text())
+                plan, duration = build_plan(
+                    tune, {0: .0125, 1: .0125, 2: .0025},
+                    amplitude_steps=settings.getint("amplitude_steps"),
+                    max_step_rate=settings.getfloat("max_step_rate"))
+                self.assertTrue(all(plan.values()))
                 self.assertLess(duration, 3)
 
 
