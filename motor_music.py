@@ -32,6 +32,20 @@ def note_frequency(note):
     return 0.0 if note == 0 else 440.0 * 2.0 ** ((note - 46) / 12.0)
 
 
+def select_voices(value, configured):
+    """Select configured Bambu voices without remapping their parts."""
+    if value is None:
+        return tuple(sorted(configured))
+    value = value.upper()
+    if (not value or any(v not in VOICES for v in value)
+            or len(set(value)) != len(value)):
+        raise MusicError("VOICES must contain distinct X, Y, Z letters (e.g. X, XY, XYZ)")
+    selected = tuple(i for i, name in enumerate(VOICES) if name in value)
+    if any(i not in configured for i in selected):
+        raise MusicError("VOICES includes a voice that is not configured")
+    return selected
+
+
 def fields_from_line(line):
     """Strict compact/space-separated M1006 fields, including valueless W."""
     line = line.split(";", 1)[0].strip().upper()
@@ -270,12 +284,12 @@ class MotorMusic:
             axis = settings[name]
             self.axis_limits[name] = (axis.get("position_min", 0), axis["position_max"])
 
-    def _plan(self, slices):
-        return build_plan(slices, {v: s.get_step_dist() for v, s in self.motors.items()},
+    def _plan(self, slices, motors):
+        return build_plan(slices, {v: s.get_step_dist() for v, s in motors.items()},
                           self.amplitude_steps, self.max_frequency,
                           self.max_excursion, self.max_step_rate)
 
-    def _check_position(self):
+    def _check_position(self, motors):
         now = self.printer.get_reactor().monotonic()
         status = self.toolhead.get_status(now)
         if set(status["homed_axes"]) != set("xyz"):
@@ -285,7 +299,7 @@ class MotorMusic:
                 and stats.get_status(now)["state"] in ("printing", "paused")):
             raise MusicError("Music during a print is disabled (allow_during_print)")
         position = self.toolhead.get_position()
-        for voice, motor in self.motors.items():
+        for motor in motors.values():
             name = motor.get_name()
             if not self.enable.lookup_enable(name).is_motor_enabled():
                 raise MusicError("%s must already be enabled" % name)
@@ -295,24 +309,28 @@ class MotorMusic:
             if not lower + self.margin <= position[index] <= upper - self.margin - excursion:
                 raise MusicError("Park %s away from its limits before playing" % name)
 
-    def _play(self, slices, gcmd, dry_run=False):
-        plan, duration = self._plan(slices)  # Validate everything before motion.
+    def _play(self, slices, gcmd, dry_run=False, voices=None):
+        selected = select_voices(voices, self.names)
+        motors = {v: self.motors[v] for v in selected}
+        voice_names = "".join(VOICES[v] for v in selected)
+        plan, duration = self._plan(slices, motors)  # Validate before motion.
         if duration > self.max_duration + 1e-9:
             raise MusicError("Melody exceeds %.2f seconds" % self.max_duration)
         if not any(plan.values()):
             raise MusicError("No audible notes on the configured voices")
         segments = sum(map(len, plan.values()))
         if dry_run:
-            gcmd.respond_info("Music preview: %.3fs, %d segments, no motion" % (duration, segments))
+            gcmd.respond_info("Music preview: %.3fs, %d segments, voices=%s, no motion" %
+                              (duration, segments, voice_names))
             return
-        self._check_position()
+        self._check_position(motors)
         self.toolhead.wait_moves()
         self.toolhead.flush_step_generation()
-        self._check_position()
+        self._check_position(motors)
         saved = []
         try:
             # Attach every voice before queuing so they share the same clock.
-            for voice, motor in self.motors.items():
+            for voice, motor in motors.items():
                 old_pos = motor.get_mcu_position()
                 old_solver = motor.set_stepper_kinematics(self.solvers[voice])
                 old_queue = motor.set_trapq(self.queues[voice])
@@ -327,7 +345,7 @@ class MotorMusic:
                                 0.0, segment.velocity, 0.0)
             end = start + duration
             if self.mq is None:
-                for motor in self.motors.values():
+                for motor in motors.values():
                     motor.generate_steps(end)
                 # v0.13's toolhead calls every registered step generator while
                 # advancing its clock. Restore first, exactly as force_move
@@ -346,8 +364,9 @@ class MotorMusic:
         finally:
             self._restore_motors(saved)
         self.toolhead.wait_moves()
-        self.last_result = {"duration": duration, "segments": segments}
-        gcmd.respond_info("Music complete: %.3fs, %d segments" % (duration, segments))
+        self.last_result = {"duration": duration, "segments": segments, "voices": voice_names}
+        gcmd.respond_info("Music complete: %.3fs, %d segments, voices=%s" %
+                          (duration, segments, voice_names))
 
     def _restore_motors(self, saved):
         mismatches = []
@@ -383,7 +402,8 @@ class MotorMusic:
             with open(path, "r", encoding="utf-8") as stream:
                 text = stream.read(MAX_FILE_BYTES + 1)
             slices = parse_gcode(text, self.max_duration)
-            self._play(slices, gcmd, bool(gcmd.get_int("DRY_RUN", 0, minval=0, maxval=1)))
+            self._play(slices, gcmd, bool(gcmd.get_int("DRY_RUN", 0, minval=0, maxval=1)),
+                       voices=gcmd.get("VOICES", None))
         except (MusicError, OSError, UnicodeError) as exc:
             raise gcmd.error(str(exc))
 
@@ -397,7 +417,7 @@ class MotorMusic:
             tones = [Tone(0, duration, 0) for _ in range(3)]
             tones[VOICES.index(voice)] = Tone(note, duration, 100)
             self._play((Slice(tuple(tones), duration),), gcmd,
-                       bool(gcmd.get_int("DRY_RUN", 0, minval=0, maxval=1)))
+                       bool(gcmd.get_int("DRY_RUN", 0, minval=0, maxval=1)), voices=voice)
         except MusicError as exc:
             raise gcmd.error(str(exc))
 

@@ -4,7 +4,8 @@ import configparser
 import pathlib
 import unittest
 
-from motor_music import MusicError, Sequence, build_plan, fields_from_line, note_frequency, parse_gcode
+from motor_music import (MusicError, Sequence, build_plan, fields_from_line,
+                         note_frequency, parse_gcode, select_voices)
 
 
 def melody(body):
@@ -74,6 +75,33 @@ class ParserTests(unittest.TestCase):
 
 
 class OscillatorTests(unittest.TestCase):
+    def test_all_seven_voice_selections(self):
+        for value in ["X", "Y", "Z", "XY", "XZ", "YZ", "XYZ"]:
+            with self.subTest(value=value):
+                self.assertEqual(select_voices(value, {0, 1, 2}),
+                                 tuple("XYZ".index(v) for v in value))
+        self.assertEqual(select_voices("yx", {0, 1, 2}), (0, 1))
+        self.assertEqual(select_voices(None, {0, 2}), (0, 2))
+
+    def test_bad_or_unconfigured_voice_selections(self):
+        for value in ["", "XX", "XQ", "X Y", "ALL", "1"]:
+            with self.subTest(value=value), self.assertRaises(MusicError):
+                select_voices(value, {0, 1, 2})
+        with self.assertRaises(MusicError):
+            select_voices("XZ", {0, 1})
+
+    def test_selected_voices_keep_original_parts_and_full_timeline(self):
+        tune = parse_gcode(melody("M1006 A0 B10 C41 D20 E44 F15\nM1006 A37 B10 C41 D10 E44 F10"))
+        full, duration = build_plan(tune, {0: .0125, 1: .0125, 2: .0025}, max_step_rate=3000)
+        distances = {0: .0125, 1: .0125, 2: .0025}
+        for value in ["X", "Y", "Z", "XY", "XZ", "YZ", "XYZ"]:
+            selected = select_voices(value, distances)
+            plan, length = build_plan(tune, {v: distances[v] for v in selected}, max_step_rate=3000)
+            self.assertEqual(length, duration)
+            self.assertEqual(set(plan), set(selected))
+            self.assertEqual(plan, {v: full[v] for v in selected})
+        self.assertAlmostEqual(full[0][0].time, .2)
+
     def test_pitch_exact_and_each_cycle_has_zero_net_distance(self):
         tune = parse_gcode(melody("M1006 C46 D20 M100"))
         plan, duration = build_plan(tune, {1: .0125})

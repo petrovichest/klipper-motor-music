@@ -79,6 +79,25 @@ MOTOR_MUSIC_PLAY FILENAME=a1-start.gcode
 MOTOR_MUSIC_PLAY FILENAME=a1-finish.gcode
 ```
 
+Для сравнения партий одной мелодии добавь `VOICES`. Параметр действует только
+на текущий запуск и не требует смены конфига или перезапуска между пробами:
+
+```gcode
+MOTOR_MUSIC_PLAY FILENAME=a1-start.gcode VOICES=X
+MOTOR_MUSIC_PLAY FILENAME=a1-start.gcode VOICES=Y
+MOTOR_MUSIC_PLAY FILENAME=a1-start.gcode VOICES=Z
+MOTOR_MUSIC_PLAY FILENAME=a1-start.gcode VOICES=XY
+MOTOR_MUSIC_PLAY FILENAME=a1-start.gcode VOICES=XZ
+MOTOR_MUSIC_PLAY FILENAME=a1-start.gcode VOICES=YZ
+MOTOR_MUSIC_PLAY FILENAME=a1-start.gcode VOICES=XYZ
+```
+
+Каждый голос играет свою исходную партию, включая её паузы; длительность
+мелодии сохраняется. В стартовой мелодии партия X короткая и содержит много
+тишины. Пропущенные голоса не получают шагов. Без `VOICES` играют все
+настроенные голоса. Для финальной мелодии замени имя на `a1-finish.gcode`.
+Параметр совместим с `DRY_RUN=1`.
+
 Файлы из `examples/tunes/` загружай через `MOTOR_MUSIC_PLAY`, **не как задание
 печати**. Импортёр принимает только музыкальную последовательность и известную
 обвязку Bambu. Он пропускает `M17`, `M18`, `M400 S1` и `M73`, сохраняя состояние

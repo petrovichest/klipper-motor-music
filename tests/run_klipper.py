@@ -83,6 +83,20 @@ M1006 A37 B10 L100 C41 D20 M100 E44 F15 N100
 M1006 A0 B10 C0 D10 E0 F10
 M1006 W
 GET_POSITION
+MOTOR_MUSIC_PLAY FILENAME=a1-start.gcode VOICES=X
+GET_POSITION
+MOTOR_MUSIC_PLAY FILENAME=a1-start.gcode VOICES=Y
+GET_POSITION
+MOTOR_MUSIC_PLAY FILENAME=a1-start.gcode VOICES=Z
+GET_POSITION
+MOTOR_MUSIC_PLAY FILENAME=a1-start.gcode VOICES=XY
+GET_POSITION
+MOTOR_MUSIC_PLAY FILENAME=a1-start.gcode VOICES=XZ
+GET_POSITION
+MOTOR_MUSIC_PLAY FILENAME=a1-start.gcode VOICES=YZ
+GET_POSITION
+MOTOR_MUSIC_PLAY FILENAME=a1-start.gcode VOICES=XYZ
+GET_POSITION
 G91
 G1 X1 Y1 Z1 F600
 G1 X-1 Y-1 Z-1 F600
@@ -139,9 +153,9 @@ def main():
                 print(contents[-16000:])
                 raise AssertionError("Real Klipper integration failed")
             positions = re.findall(r"^mcu:.*$", contents, re.MULTILINE)
-            if len(positions) != 6 or len(set(positions)) != 1:
+            if len(positions) != 13 or len(set(positions)) != 1:
                 raise AssertionError("MCU counters changed: %r" % positions)
-            if contents.count("Music complete:") != 4 or contents.count("Music preview:") != 2:
+            if contents.count("Music complete:") != 11 or contents.count("Music preview:") != 2:
                 raise AssertionError("Not all playback/preview paths completed")
             commands = decode_output(klipper, dictionary, output)
             queue_steps = [line for line in commands if "queue_step " in line]
@@ -175,19 +189,50 @@ def main():
                     raise AssertionError("440 Hz note has incorrect MCU timing")
             if abs(y_steps[176] - z_steps[0]) > 2:
                 raise AssertionError("A1's first Y/Z voices did not start together")
-            print("Real Klipper integration passed: 4 playbacks, 2 previews, "
+            print("Real Klipper integration passed: 11 playbacks, 2 previews, "
                   "%d queue_step commands, zero net steps on all 3 motors, "
                   "440 Hz timing and synchronous voices verified, normal motion restored. "
                   "Total steps: %s" % (len(queue_steps), totals))
             # Negative paths must fail before emitting any motion.
             parked = GCODE[:GCODE.index("GET_POSITION")]
+            expected_counts = {"a1-start.gcode": {"X": 222, "Y": 864, "Z": 730},
+                               "a1-finish.gcode": {"X": 312, "Y": 1068, "Z": 1084}}
+            # Check the emitted packets, not just the Python plan: an omitted
+            # voice must send no steps, and every retained part stays intact.
+            for filename, voice_counts in expected_counts.items():
+                for selection in ["X", "Y", "Z", "XY", "XZ", "YZ", "XYZ"]:
+                    gcode.write_text(parked + "MOTOR_MUSIC_PLAY FILENAME=%s VOICES=%s\n" %
+                                     (filename, selection))
+                    log.unlink()
+                    result = subprocess.run([sys.executable, str(klipper / "klippy/klippy.py"),
+                                             str(config), "-i", str(gcode), "-o", str(output),
+                                             "-d", str(dictionary), "-l", str(log)],
+                                            text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                            timeout=60)
+                    contents = log.read_text()
+                    if result.returncode or "Music complete:" not in contents:
+                        raise AssertionError("%s %s failed:\n%s" % (filename, selection, contents[-4000:]))
+                    totals_by_oid = {}
+                    for line in decode_output(klipper, dictionary, output):
+                        if "queue_step " in line:
+                            fields = dict(re.findall(r"(\w+)=(-?\d+)", line))
+                            oid = fields["oid"]
+                            totals_by_oid[oid] = totals_by_oid.get(oid, 0) + int(fields["count"])
+                    expected = {by_pin[pin]: voice_counts[v]
+                                for v, pin in zip("XYZ", ("0", "4", "7")) if v in selection}
+                    if totals_by_oid != expected:
+                        raise AssertionError("%s %s: emitted %r, expected %r" %
+                                             (filename, selection, totals_by_oid, expected))
+            print("All 7 voice combinations passed for both stock tunes; muted motors emitted no steps.")
             cases = [
                 ("unhomed", "MOTOR_MUSIC_TEST", "Home XYZ"),
-                ("limit", parked.replace("X=100", "X=0") + "MOTOR_MUSIC_TEST", "away from its limits"),
+                ("limit", parked.replace("Y=100", "Y=0") + "MOTOR_MUSIC_TEST", "away from its limits"),
                 ("frequency", parked + "MOTOR_MUSIC_TEST NOTE=72", "exceeds max_frequency"),
                 ("path", parked + "MOTOR_MUSIC_PLAY FILENAME=../outside.gcode", "inside tune_directory"),
                 ("malformed", "M1006 S1\nM1006 C73 D10\nM1006 W", "notes must be in 0..72"),
                 ("preview", "MOTOR_MUSIC_TEST DRY_RUN=1", "Music preview:"),
+                ("duplicate-voices", parked + "MOTOR_MUSIC_PLAY FILENAME=a1-start.gcode VOICES=XX", "distinct X, Y, Z"),
+                ("unknown-voice", parked + "MOTOR_MUSIC_PLAY FILENAME=a1-start.gcode VOICES=XQ", "distinct X, Y, Z"),
             ]
             for name, program, expected in cases:
                 gcode.write_text(program + "\n")
@@ -203,7 +248,7 @@ def main():
                                          (name, expected, contents[-4000:]))
                 if any("queue_step " in line for line in decode_output(klipper, dictionary, output)):
                     raise AssertionError("%s emitted motion" % name)
-            print("6 rejection/preview scenarios passed without emitting steps.")
+            print("8 rejection/preview scenarios passed without emitting steps.")
     finally:
         target.unlink()
 
