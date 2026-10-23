@@ -61,6 +61,17 @@ shaper_freq_y: 26.75
 [include {full_config}]
 [motor_music]
 tune_directory: {tunes}
+[gcode_macro CHECK_PRE_HOME]
+gcode:
+  {{% if printer.toolhead.homed_axes %}}
+    {{action_raise_error("PRE_HOME falsely marked axes as homed")}}
+  {{% endif %}}
+  {{% for axis in params.VOICES|lower %}}
+    {{% if not printer.stepper_enable.steppers['stepper_' + axis] %}}
+      {{action_raise_error("PRE_HOME did not enable a selected motor")}}
+    {{% endif %}}
+  {{% endfor %}}
+  {{action_respond_info("PRE_HOME state verified")}}
 """
 
 GCODE = """
@@ -224,6 +235,33 @@ def main():
                         raise AssertionError("%s %s: emitted %r, expected %r" %
                                              (filename, selection, totals_by_oid, expected))
             print("All 7 voice combinations passed for both stock tunes; muted motors emitted no steps.")
+            # Start from genuine unhomed/disabled state. No SET_KINEMATIC_POSITION
+            # or SET_STEPPER_ENABLE is supplied by this test.
+            for selection in ["X", "Y", "Z", "XY", "XZ", "YZ", "XYZ"]:
+                gcode.write_text("GET_POSITION\nMOTOR_MUSIC_PLAY FILENAME=a1-start.gcode VOICES=%s PRE_HOME=1\n"
+                                 "GET_POSITION\nCHECK_PRE_HOME VOICES=%s\n" % (selection, selection))
+                log.unlink()
+                result = subprocess.run([sys.executable, str(klipper / "klippy/klippy.py"),
+                                         str(config), "-i", str(gcode), "-o", str(output),
+                                         "-d", str(dictionary), "-l", str(log)],
+                                        text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                        timeout=60)
+                contents = log.read_text()
+                positions = re.findall(r"^mcu:.*$", contents, re.MULTILINE)
+                if (result.returncode or "PRE_HOME state verified" not in contents
+                        or len(positions) != 2 or len(set(positions)) != 1):
+                    raise AssertionError("PRE_HOME %s failed:\n%s" % (selection, contents[-6000:]))
+                actual = {}
+                for line in decode_output(klipper, dictionary, output):
+                    if "queue_step " in line:
+                        fields = dict(re.findall(r"(\w+)=(-?\d+)", line))
+                        oid = fields["oid"]
+                        actual[oid] = actual.get(oid, 0) + int(fields["count"])
+                expected = {by_pin[pin]: expected_counts['a1-start.gcode'][v]
+                            for v, pin in zip('XYZ', ('0', '4', '7')) if v in selection}
+                if actual != expected:
+                    raise AssertionError("PRE_HOME %s emitted incorrect parts: %r" % (selection, actual))
+            print("All 7 PRE_HOME combinations passed: motors auto-enabled, zero net steps, homing remained unknown.")
             cases = [
                 ("unhomed", "MOTOR_MUSIC_TEST", "Home XYZ"),
                 ("limit", parked.replace("Y=100", "Y=0") + "MOTOR_MUSIC_TEST", "away from its limits"),

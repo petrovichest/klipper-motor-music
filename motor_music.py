@@ -289,10 +289,11 @@ class MotorMusic:
                           self.amplitude_steps, self.max_frequency,
                           self.max_excursion, self.max_step_rate)
 
-    def _check_position(self, motors):
+    def _check_position(self, motors, pre_home=False):
         now = self.printer.get_reactor().monotonic()
         status = self.toolhead.get_status(now)
-        if set(status["homed_axes"]) != set("xyz"):
+        homed = set(status["homed_axes"])
+        if not pre_home and homed != set("xyz"):
             raise MusicError("Home XYZ and park clear of the endstops before playing")
         stats = self.printer.lookup_object("print_stats", None)
         if (not self.allow_during_print and stats is not None
@@ -301,21 +302,26 @@ class MotorMusic:
         position = self.toolhead.get_position()
         for motor in motors.values():
             name = motor.get_name()
-            if not self.enable.lookup_enable(name).is_motor_enabled():
+            if not pre_home and not self.enable.lookup_enable(name).is_motor_enabled():
                 raise MusicError("%s must already be enabled" % name)
             index = "xyz".index(name[-1])
+            if pre_home and name[-1] not in homed:
+                continue  # Unknown coordinates stay unknown; never fake homing.
             lower, upper = self.axis_limits[name]
             excursion = self.amplitude_steps * motor.get_step_dist()
             if not lower + self.margin <= position[index] <= upper - self.margin - excursion:
                 raise MusicError("Park %s away from its limits before playing" % name)
 
-    def _play(self, slices, gcmd, dry_run=False, voices=None):
+    def _play(self, slices, gcmd, dry_run=False, voices=None, pre_home=False):
         selected = select_voices(voices, self.names)
         motors = {v: self.motors[v] for v in selected}
         voice_names = "".join(VOICES[v] for v in selected)
         plan, duration = self._plan(slices, motors)  # Validate before motion.
         if duration > self.max_duration + 1e-9:
             raise MusicError("Melody exceeds %.2f seconds" % self.max_duration)
+        if pre_home and (duration > 3.0 or self.amplitude_steps != 1
+                         or any(m.get_step_dist() > .025 + 1e-12 for m in motors.values())):
+            raise MusicError("PRE_HOME requires <=3 seconds and one microstep <=0.025 mm")
         if not any(plan.values()):
             raise MusicError("No audible notes on the configured voices")
         segments = sum(map(len, plan.values()))
@@ -323,10 +329,20 @@ class MotorMusic:
             gcmd.respond_info("Music preview: %.3fs, %d segments, voices=%s, no motion" %
                               (duration, segments, voice_names))
             return
-        self._check_position(motors)
+        self._check_position(motors, pre_home)
         self.toolhead.wait_moves()
         self.toolhead.flush_step_generation()
-        self._check_position(motors)
+        self._check_position(motors, pre_home)
+        if pre_home:
+            enable_time = self.toolhead.get_last_move_time()
+            changed = False
+            for motor in motors.values():
+                enable = self.enable.lookup_enable(motor.get_name())
+                if not enable.is_motor_enabled():
+                    enable.motor_enable(enable_time)
+                    changed = True
+            if changed:
+                self.toolhead.dwell(.100)
         saved = []
         try:
             # Attach every voice before queuing so they share the same clock.
@@ -364,7 +380,8 @@ class MotorMusic:
         finally:
             self._restore_motors(saved)
         self.toolhead.wait_moves()
-        self.last_result = {"duration": duration, "segments": segments, "voices": voice_names}
+        self.last_result = {"duration": duration, "segments": segments,
+                            "voices": voice_names, "pre_home": pre_home}
         gcmd.respond_info("Music complete: %.3fs, %d segments, voices=%s" %
                           (duration, segments, voice_names))
 
@@ -403,7 +420,8 @@ class MotorMusic:
                 text = stream.read(MAX_FILE_BYTES + 1)
             slices = parse_gcode(text, self.max_duration)
             self._play(slices, gcmd, bool(gcmd.get_int("DRY_RUN", 0, minval=0, maxval=1)),
-                       voices=gcmd.get("VOICES", None))
+                       voices=gcmd.get("VOICES", None),
+                       pre_home=bool(gcmd.get_int("PRE_HOME", 0, minval=0, maxval=1)))
         except (MusicError, OSError, UnicodeError) as exc:
             raise gcmd.error(str(exc))
 
